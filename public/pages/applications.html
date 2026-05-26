@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Applications – InternTrack</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    .top-bar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+    .top-bar .search-bar { flex: 1; min-width: 200px; margin-bottom: 0; }
+    .filters { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .filter-btn { padding: 7px 16px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; transition: all 0.2s; }
+    .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .app-grid { display: grid; gap: 12px; }
+    .app-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: flex; justify-content: space-between; align-items: flex-start; transition: border-color 0.2s; }
+    .app-card:hover { border-color: var(--accent); }
+    .app-card-left h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .app-card-left p { font-size: 13px; color: var(--muted); }
+    .app-card-right { display: flex; align-items: center; gap: 12px; }
+    .app-actions { display: flex; gap: 6px; opacity: 0; transition: opacity 0.2s; }
+    .app-card:hover .app-actions { opacity: 1; }
+    .icon-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+    .icon-btn:hover { color: var(--text); border-color: var(--accent); }
+    .icon-btn.del:hover { color: var(--red); border-color: var(--red); }
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--muted); }
+    .results-count { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <script src="/js/app.js"></script>
+  <div class="page-container">
+    <div class="page-header">
+      <h1 class="page-title">Applications</h1>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" onclick="exportPDF()">⬇ Export PDF</button>
+        <button class="btn btn-primary" onclick="openModal()">+ Add Application</button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="top-bar">
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search by company, role, or location..." oninput="renderApps()">
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+      <button class="filter-btn active" onclick="filter('all', this)">All</button>
+      <button class="filter-btn" onclick="filter('Applied', this)">Applied</button>
+      <button class="filter-btn" onclick="filter('Interview', this)">Interview</button>
+      <button class="filter-btn" onclick="filter('Offer', this)">Offer</button>
+      <button class="filter-btn" onclick="filter('Rejected', this)">Rejected</button>
+    </div>
+
+    <div class="results-count" id="resultsCount"></div>
+    <div class="app-grid" id="appGrid"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">Add Application</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <form id="appForm">
+        <input type="hidden" id="editId">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group"><label>Company *</label><input type="text" id="fCompany" required placeholder="Google"></div>
+          <div class="form-group"><label>Role *</label><input type="text" id="fRole" required placeholder="Software Engineer Intern"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group"><label>Location</label><input type="text" id="fLocation" placeholder="Remote / Karachi"></div>
+          <div class="form-group"><label>Applied Date</label><input type="date" id="fDate"></div>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="fStatus"><option>Applied</option><option>Interview</option><option>Offer</option><option>Rejected</option></select>
+        </div>
+        <div class="form-group"><label>Notes</label><textarea id="fNotes" placeholder="Any notes..."></textarea></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="submitBtn">Add Application</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let allApps = [];
+    let currentFilter = 'all';
+
+    (async () => {
+      await initPage('applications');
+      await loadApps();
+    })();
+
+    async function loadApps() {
+      allApps = await fetch('/api/applications').then(r => r.json());
+      renderApps();
+    }
+
+    function renderApps() {
+      const q = document.getElementById('searchInput').value.toLowerCase().trim();
+      const grid = document.getElementById('appGrid');
+      let filtered = currentFilter === 'all' ? allApps : allApps.filter(a => a.status === currentFilter);
+      if (q) filtered = filtered.filter(a =>
+        a.company.toLowerCase().includes(q) ||
+        a.role.toLowerCase().includes(q) ||
+        (a.location && a.location.toLowerCase().includes(q))
+      );
+      document.getElementById('resultsCount').textContent = `${filtered.length} application${filtered.length !== 1 ? 's' : ''}`;
+      if (!filtered.length) {
+        grid.innerHTML = `<div class="empty-state"><p>${q ? 'No results for "' + q + '"' : 'No applications found.'}</p></div>`;
+        return;
+      }
+      grid.innerHTML = filtered.map(a => `
+        <div class="app-card">
+          <div class="app-card-left">
+            <h3>${a.company}</h3>
+            <p>${a.role}${a.location ? ' · ' + a.location : ''}${a.applied_date ? ' · ' + new Date(a.applied_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}</p>
+            ${a.notes ? `<p style="margin-top:6px;font-size:12px;color:var(--muted)">${a.notes.slice(0,80)}${a.notes.length>80?'...':''}</p>` : ''}
+          </div>
+          <div class="app-card-right">
+            ${getBadge(a.status)}
+            <div class="app-actions">
+              <button class="icon-btn" onclick="editApp(${a.id})">Edit</button>
+              <button class="icon-btn del" onclick="deleteApp(${a.id})">Delete</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filter(val, btn) {
+      currentFilter = val;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderApps();
+    }
+
+    function openModal(reset = true) {
+      if (reset) { document.getElementById('appForm').reset(); document.getElementById('editId').value = ''; document.getElementById('modalTitle').textContent = 'Add Application'; document.getElementById('submitBtn').textContent = 'Add Application'; }
+      document.getElementById('modal').classList.add('open');
+    }
+    function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+    async function editApp(id) {
+      const a = allApps.find(x => x.id === id);
+      if (!a) return;
+      editId.value = a.id; fCompany.value = a.company; fRole.value = a.role;
+      fLocation.value = a.location || ''; fDate.value = a.applied_date ? a.applied_date.slice(0,10) : '';
+      fStatus.value = a.status; fNotes.value = a.notes || '';
+      document.getElementById('modalTitle').textContent = 'Edit Application';
+      document.getElementById('submitBtn').textContent = 'Save Changes';
+      openModal(false);
+    }
+
+    async function deleteApp(id) {
+      if (!confirm('Delete this application?')) return;
+      await fetch(`/api/applications/${id}`, { method: 'DELETE' });
+      showToast('Application deleted');
+      loadApps();
+    }
+
+    document.getElementById('appForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = editId.value;
+      const body = { company: fCompany.value, role: fRole.value, location: fLocation.value, applied_date: fDate.value, status: fStatus.value, notes: fNotes.value };
+      await fetch(id ? `/api/applications/${id}` : '/api/applications', { method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      closeModal();
+      showToast(id ? 'Application updated' : 'Application added');
+      loadApps();
+    });
+
+    function exportPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFontSize(18);
+      doc.setTextColor(44, 62, 80);
+      doc.text('InternTrack – My Applications', 14, 20);
+
+      doc.setFontSize(10);
+      doc.setTextColor(120, 120, 120);
+      doc.text('Exported on ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 14, 28);
+
+      const q = document.getElementById('searchInput').value.toLowerCase().trim();
+      let filtered = currentFilter === 'all' ? allApps : allApps.filter(a => a.status === currentFilter);
+      if (q) filtered = filtered.filter(a => a.company.toLowerCase().includes(q) || a.role.toLowerCase().includes(q));
+
+      const rows = filtered.map(a => [
+        a.company, a.role, a.location || '–', a.status,
+        a.applied_date ? new Date(a.applied_date).toLocaleDateString('en-GB') : '–',
+        a.notes ? a.notes.slice(0, 40) : '–'
+      ]);
+
+      doc.autoTable({
+        startY: 34,
+        head: [['Company', 'Role', 'Location', 'Status', 'Date Applied', 'Notes']],
+        body: rows,
+        headStyles: { fillColor: [46, 64, 87], textColor: 255, fontStyle: 'bold', fontSize: 10 },
+        bodyStyles: { fontSize: 9 },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        columnStyles: { 0: { cellWidth: 32 }, 1: { cellWidth: 38 }, 2: { cellWidth: 28 }, 3: { cellWidth: 24 }, 4: { cellWidth: 28 }, 5: { cellWidth: 40 } },
+        margin: { left: 14, right: 14 }
+      });
+
+      doc.save('interntrack-applications.pdf');
+      showToast('PDF exported');
+    }
+  </script>
+</body>
+</html>

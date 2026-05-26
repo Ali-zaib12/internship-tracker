@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard – InternTrack</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 40px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+    .stat-label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .stat-value { font-family: 'Syne', sans-serif; font-size: 36px; font-weight: 800; }
+    .stat-card:nth-child(1) .stat-value { color: var(--text); }
+    .stat-card:nth-child(2) .stat-value { color: var(--blue); }
+    .stat-card:nth-child(3) .stat-value { color: var(--yellow); }
+    .stat-card:nth-child(4) .stat-value { color: var(--green); }
+
+    .recent-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+    .app-row { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--border); }
+    .app-row:last-child { border-bottom: none; }
+    .app-company { font-weight: 500; }
+    .app-role { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .app-date { font-size: 12px; color: var(--muted); }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-state h3 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+    .empty-state p { font-size: 14px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <script src="/js/app.js"></script>
+  <div class="page-container">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title" id="greeting">Good morning 👋</h1>
+        <p style="color:var(--muted);margin-top:4px;font-size:14px">Here's your internship hunt overview</p>
+      </div>
+      <a href="applications.html" class="btn btn-primary">+ New Application</a>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Total Applied</div><div class="stat-value" id="statTotal">–</div></div>
+      <div class="stat-card"><div class="stat-label">Interviews</div><div class="stat-value" id="statInterviews">–</div></div>
+      <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="statPending">–</div></div>
+      <div class="stat-card"><div class="stat-label">Offers</div><div class="stat-value" id="statOffers">–</div></div>
+    </div>
+
+    <div class="card">
+      <div class="recent-title">Recent Applications</div>
+      <div id="recentList"><div class="empty-state"><p>Loading...</p></div></div>
+    </div>
+  </div>
+
+  <script>
+    (async () => {
+      const user = await initPage('dashboard');
+      if (!user) return;
+
+      const hour = new Date().getHours();
+      const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+      document.getElementById('greeting').textContent = `${greeting}, ${user.name.split(' ')[0]} 👋`;
+
+      const stats = await fetch('/api/applications/stats').then(r => r.json());
+      document.getElementById('statTotal').textContent = stats.total || 0;
+      document.getElementById('statInterviews').textContent = stats.interviews || 0;
+      document.getElementById('statPending').textContent = stats.applied || 0;
+      document.getElementById('statOffers').textContent = stats.offers || 0;
+
+      const apps = await fetch('/api/applications').then(r => r.json());
+      const list = document.getElementById('recentList');
+      if (!apps.length) {
+        list.innerHTML = `<div class="empty-state">
+          <h3>No applications yet</h3>
+          <p>Start tracking your internship hunt</p>
+          <a href="applications.html" class="btn btn-primary">Add First Application</a>
+        </div>`;
+        return;
+      }
+      list.innerHTML = apps.slice(0, 8).map(a => `
+        <div class="app-row">
+          <div>
+            <div class="app-company">${a.company}</div>
+            <div class="app-role">${a.role} ${a.location ? '· ' + a.location : ''}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:16px">
+            ${getBadge(a.status)}
+            <span class="app-date">${a.applied_date ? new Date(a.applied_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) : ''}</span>
+          </div>
+        </div>
+      `).join('');
+    })();
+  </script>
+</body>
+</html>

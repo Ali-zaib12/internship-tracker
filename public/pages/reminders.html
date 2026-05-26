@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reminders – InternTrack</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .reminders-list { display: grid; gap: 10px; }
+    .section-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 10px; }
+  </style>
+</head>
+<body>
+  <script src="/js/app.js"></script>
+  <div class="page-container">
+    <div class="page-header">
+      <h1 class="page-title">Reminders</h1>
+      <button class="btn btn-primary" onclick="openModal()">+ Add Reminder</button>
+    </div>
+    <div id="remindersList"><p style="color:var(--muted)">Loading...</p></div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">New Reminder</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <form id="reminderForm">
+        <div class="form-group">
+          <label>Title *</label>
+          <input type="text" id="rTitle" required placeholder="e.g. Interview at Google">
+        </div>
+        <div class="form-group">
+          <label>Date & Time *</label>
+          <input type="datetime-local" id="rDate" required>
+        </div>
+        <div class="form-group">
+          <label>Link to Application (optional)</label>
+          <select id="rApp">
+            <option value="">None</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Note</label>
+          <textarea id="rNote" placeholder="Any extra details..."></textarea>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Reminder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (async () => {
+      await initPage('reminders');
+      await loadReminders();
+      await loadAppsDropdown();
+    })();
+
+    async function loadAppsDropdown() {
+      const apps = await fetch('/api/applications').then(r => r.json());
+      const sel = document.getElementById('rApp');
+      apps.forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = `${a.company} – ${a.role}`;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function loadReminders() {
+      const reminders = await fetch('/api/reminders').then(r => r.json());
+      const container = document.getElementById('remindersList');
+
+      if (!reminders.length) {
+        container.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)"><p>No reminders yet. Add one to stay on track.</p></div>`;
+        return;
+      }
+
+      const now = new Date();
+      const upcoming = reminders.filter(r => !r.is_done && new Date(r.reminder_date) >= now);
+      const overdue = reminders.filter(r => !r.is_done && new Date(r.reminder_date) < now);
+      const done = reminders.filter(r => r.is_done);
+
+      let html = '';
+      if (overdue.length) {
+        html += `<div class="section-label">⚠ Overdue</div><div class="reminders-list">${overdue.map(r => renderCard(r, 'overdue')).join('')}</div>`;
+      }
+      if (upcoming.length) {
+        html += `<div class="section-label">Upcoming</div><div class="reminders-list">${upcoming.map(r => renderCard(r, 'upcoming')).join('')}</div>`;
+      }
+      if (done.length) {
+        html += `<div class="section-label">Completed</div><div class="reminders-list">${done.map(r => renderCard(r, 'done')).join('')}</div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function renderCard(r, type) {
+      const d = new Date(r.reminder_date);
+      const isToday = d.toDateString() === new Date().toDateString();
+      const dateStr = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' at ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      return `
+        <div class="reminder-card ${type === 'done' ? 'done' : ''} ${type === 'overdue' ? 'overdue' : ''} ${isToday ? 'today' : ''}">
+          <div style="display:flex;align-items:center;gap:14px;flex:1">
+            <div class="reminder-dot"></div>
+            <div>
+              <div class="reminder-title">${r.title}</div>
+              <div class="reminder-meta">${r.company ? r.company + (r.role ? ' · ' + r.role : '') : ''}${r.note ? (r.company ? ' · ' : '') + r.note.slice(0, 50) : ''}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="reminder-date">${dateStr}</span>
+            ${!r.is_done ? `<button class="icon-btn" onclick="markDone(${r.id})">Done</button>` : ''}
+            <button class="icon-btn del" onclick="deleteReminder(${r.id})">✕</button>
+          </div>
+        </div>`;
+    }
+
+    function openModal() {
+      // Default to now + 1 day
+      const d = new Date(); d.setDate(d.getDate() + 1);
+      document.getElementById('rDate').value = d.toISOString().slice(0, 16);
+      document.getElementById('modal').classList.add('open');
+    }
+    function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+    document.getElementById('reminderForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = { title: rTitle.value, reminder_date: rDate.value, note: rNote.value, application_id: rApp.value || null };
+      await fetch('/api/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      closeModal();
+      document.getElementById('reminderForm').reset();
+      showToast('Reminder saved');
+      loadReminders();
+    });
+
+    async function markDone(id) {
+      await fetch(`/api/reminders/${id}/done`, { method: 'PUT' });
+      showToast('Marked as done');
+      loadReminders();
+    }
+
+    async function deleteReminder(id) {
+      if (!confirm('Delete this reminder?')) return;
+      await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
+      showToast('Reminder deleted');
+      loadReminders();
+    }
+  </script>
+</body>
+</html>

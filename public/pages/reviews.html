@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reviews – InternTrack</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .reviews-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .review-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+    .review-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .review-company { font-weight: 700; font-size: 16px; }
+    .review-author { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .review-stars { color: var(--yellow); font-size: 14px; margin-bottom: 8px; }
+    .review-title { font-weight: 600; margin-bottom: 6px; }
+    .review-body { font-size: 13px; color: var(--muted); line-height: 1.6; }
+    .recommend-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; margin-top: 12px; padding: 3px 10px; border-radius: 20px; }
+    .recommend-yes { background: rgba(46,204,113,0.1); color: var(--green); }
+    .recommend-no { background: rgba(231,76,60,0.1); color: var(--red); }
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <script src="/js/app.js"></script>
+  <div class="page-container">
+    <div class="page-header">
+      <h1 class="page-title">Company Reviews</h1>
+      <button class="btn btn-primary" onclick="openModal()">+ Write Review</button>
+    </div>
+    <div class="reviews-grid" id="reviewsGrid"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Write a Review</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <form id="reviewForm">
+        <div class="form-group">
+          <label>Company *</label>
+          <input type="text" id="rCompany" required placeholder="Company name">
+        </div>
+        <div class="form-group">
+          <label>Rating</label>
+          <div class="star-rating" id="starRating">
+            <span class="star" data-val="1">★</span>
+            <span class="star" data-val="2">★</span>
+            <span class="star" data-val="3">★</span>
+            <span class="star" data-val="4">★</span>
+            <span class="star" data-val="5">★</span>
+          </div>
+          <input type="hidden" id="rRating" value="0">
+        </div>
+        <div class="form-group">
+          <label>Review Title</label>
+          <input type="text" id="rTitle" placeholder="Great learning experience">
+        </div>
+        <div class="form-group">
+          <label>Your Review</label>
+          <textarea id="rBody" placeholder="Share your experience..."></textarea>
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="rRecommend" style="width:auto" checked>
+            Would recommend this company
+          </label>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Submit Review</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let currentUserId;
+
+    (async () => {
+      const user = await initPage('reviews');
+      if (!user) return;
+      currentUserId = user.id;
+      loadReviews();
+    })();
+
+    async function loadReviews() {
+      const reviews = await fetch('/api/reviews').then(r => r.json());
+      const grid = document.getElementById('reviewsGrid');
+      if (!reviews.length) {
+        grid.innerHTML = `<div class="empty-state"><p>No reviews yet. Be the first to share your experience!</p></div>`;
+        return;
+      }
+      grid.innerHTML = reviews.map(r => `
+        <div class="review-card">
+          <div class="review-header">
+            <div>
+              <div class="review-company">${r.company}</div>
+              <div class="review-author">by ${r.author}</div>
+            </div>
+            ${r.user_id === currentUserId ? `<button class="icon-btn del" onclick="deleteReview(${r.id})" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px">✕</button>` : ''}
+          </div>
+          <div class="review-stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</div>
+          ${r.title ? `<div class="review-title">${r.title}</div>` : ''}
+          ${r.body ? `<div class="review-body">${r.body}</div>` : ''}
+          <span class="recommend-tag ${r.would_recommend ? 'recommend-yes' : 'recommend-no'}">
+            ${r.would_recommend ? '✓ Recommends' : '✗ Does not recommend'}
+          </span>
+        </div>
+      `).join('');
+    }
+
+    // Star rating
+    let selectedRating = 0;
+    document.querySelectorAll('.star').forEach(s => {
+      s.addEventListener('click', () => {
+        selectedRating = parseInt(s.dataset.val);
+        document.getElementById('rRating').value = selectedRating;
+        document.querySelectorAll('.star').forEach((st, i) => st.classList.toggle('active', i < selectedRating));
+      });
+      s.addEventListener('mouseover', () => {
+        const val = parseInt(s.dataset.val);
+        document.querySelectorAll('.star').forEach((st, i) => st.classList.toggle('active', i < val));
+      });
+      s.addEventListener('mouseout', () => {
+        document.querySelectorAll('.star').forEach((st, i) => st.classList.toggle('active', i < selectedRating));
+      });
+    });
+
+    function openModal() { document.getElementById('modal').classList.add('open'); }
+    function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+    document.getElementById('reviewForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = { company: rCompany.value, rating: parseInt(rRating.value) || 3, title: rTitle.value, body: rBody.value, would_recommend: rRecommend.checked };
+      await fetch('/api/reviews', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      closeModal();
+      document.getElementById('reviewForm').reset();
+      selectedRating = 0;
+      document.querySelectorAll('.star').forEach(s => s.classList.remove('active'));
+      showToast('Review submitted');
+      loadReviews();
+    });
+
+    async function deleteReview(id) {
+      if (!confirm('Delete this review?')) return;
+      await fetch(`/api/reviews/${id}`, { method: 'DELETE' });
+      showToast('Review deleted');
+      loadReviews();
+    }
+  </script>
+</body>
+</html>
